@@ -92,7 +92,7 @@ const server = http.createServer((req, res) => {
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-File-Ext');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-File-Ext, X-File-Name');
 
     if (req.method === 'OPTIONS') {
         res.writeHead(200);
@@ -130,8 +130,19 @@ const server = http.createServer((req, res) => {
         req.on('data', chunk => body.push(chunk));
         req.on('end', () => {
             const buffer = Buffer.concat(body);
-            const ext = req.headers['x-file-ext'] || 'png';
-            const filename = `img_${Date.now()}.${ext}`;
+            const ext = req.headers['x-file-ext'] || 'bin';
+            const rawName = req.headers['x-file-name'] ? decodeURIComponent(req.headers['x-file-name']) : '';
+            
+            // Clean original filename, keeping only safe alphanumeric characters
+            let cleanBaseName = 'upload';
+            if (rawName) {
+                const parts = rawName.split('.');
+                if (parts.length > 1) parts.pop(); // Remove extension
+                cleanBaseName = parts.join('.').replace(/[^a-zA-Z0-9_-]/g, '_');
+                if (!cleanBaseName) cleanBaseName = 'upload';
+            }
+            
+            const filename = `file_${Date.now()}_${cleanBaseName}.${ext}`;
             fs.writeFileSync(path.join(IMAGES_DIR, filename), buffer);
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ url: `images/${filename}` }));
@@ -162,14 +173,25 @@ const server = http.createServer((req, res) => {
     } else {
         let filePath = req.url === '/' ? '/index.html' : req.url;
         let extname = path.extname(filePath);
-        let contentType = 'text/html';
+        let contentType = 'application/octet-stream';
 
         switch (extname) {
+            case '.html':
+            case '':
+                contentType = 'text/html';
+                break;
             case '.js': contentType = 'text/javascript'; break;
             case '.css': contentType = 'text/css'; break;
             case '.json': contentType = 'application/json'; break;
             case '.png': contentType = 'image/png'; break;
             case '.jpg': contentType = 'image/jpg'; break;
+            case '.jpeg': contentType = 'image/jpeg'; break;
+            case '.webp': contentType = 'image/webp'; break;
+            case '.gif': contentType = 'image/gif'; break;
+            case '.svg': contentType = 'image/svg+xml'; break;
+            case '.pdf': contentType = 'application/pdf'; break;
+            case '.txt': contentType = 'text/plain'; break;
+            case '.md': contentType = 'text/markdown'; break;
         }
 
         let targetDir = PUBLIC_DIR;

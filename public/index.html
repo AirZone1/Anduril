@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="he" dir="rtl" data-theme="dark">
+<html lang="en" dir="ltr" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,13 +11,13 @@
     <div class="app-container">
         <header class="app-header">
             <div class="header-left">
-                <i data-lucide="bot"></i>
+                <i data-lucide="sword"></i>
                 <h1>Anduril - Agent Task Manager</h1>
             </div>
             <div class="header-right">
                 <span class="status-indicator" id="syncStatus">
                     <i data-lucide="refresh-cw" class="spin"></i>
-                    מסנכרן...
+                    Syncing...
                 </span>
                 <button class="theme-toggle" id="themeToggle" aria-label="Toggle Theme">
                     <i data-lucide="sun" class="light-icon"></i>
@@ -28,21 +28,27 @@
 
         <main class="main-content">
             <section class="add-task-section card">
-                <h2>משימה חדשה</h2>
+                <h2>New Task</h2>
                 <div class="add-task-form">
                     <div class="form-row">
                         <select id="taskPriority" style="margin-bottom: 12px;">
-                            <option value="Normal">🟢 רגילה</option>
-                            <option value="High">🟡 גבוהה</option>
-                            <option value="Urgent">🔴 דחופה</option>
+                            <option value="Normal">🟢 Normal</option>
+                            <option value="High">🟡 High</option>
+                            <option value="Urgent">🔴 Urgent</option>
                         </select>
                     </div>
-                    <textarea id="taskDescription" placeholder="פירוט המשימה... אפשר להדביק כאן תמונות (Ctrl+V)"></textarea>
+                    <textarea id="taskDescription" placeholder="Task details... Paste images/files (Ctrl+V) or drag & drop them here"></textarea>
                     
                     <div class="form-actions">
-                        <span class="hint">הדבק תמונות ישירות לתיבת הטקסט! <i data-lucide="image"></i></span>
+                        <div class="form-actions-left">
+                            <input type="file" id="taskFileSelect" style="display: none;" multiple>
+                            <button type="button" id="attachFileBtn" class="btn btn-secondary" title="Attach file or image">
+                                <i data-lucide="paperclip"></i> Attach File
+                            </button>
+                            <span class="hint">Paste or drop files directly!</span>
+                        </div>
                         <button id="addTaskBtn" class="btn btn-primary">
-                            <i data-lucide="plus"></i> הוסף משימה
+                            <i data-lucide="plus"></i> Add Task
                         </button>
                     </div>
                 </div>
@@ -50,34 +56,55 @@
 
             <div class="tasks-container">
                 <section class="priority-section" id="section-Urgent">
-                    <h3 class="priority-title urgent">
-                        <i data-lucide="alert-triangle"></i> דחוף (Urgent)
+                    <h3 class="priority-title urgent" onclick="toggleSection('Urgent')">
+                        <i data-lucide="chevron-down" class="collapse-icon" id="icon-Urgent"></i>
+                        <i data-lucide="alert-triangle"></i>
+                        <span class="section-name">Urgent</span>
+                        <span class="count-badge" id="count-Urgent">(0)</span>
                     </h3>
                     <div class="task-list" id="list-Urgent"></div>
                 </section>
 
                 <section class="priority-section" id="section-High">
-                    <h3 class="priority-title high">
-                        <i data-lucide="alert-circle"></i> גבוה (High)
+                    <h3 class="priority-title high" onclick="toggleSection('High')">
+                        <i data-lucide="chevron-down" class="collapse-icon" id="icon-High"></i>
+                        <i data-lucide="alert-circle"></i>
+                        <span class="section-name">High</span>
+                        <span class="count-badge" id="count-High">(0)</span>
                     </h3>
                     <div class="task-list" id="list-High"></div>
                 </section>
 
                 <section class="priority-section" id="section-Normal">
-                    <h3 class="priority-title normal">
-                        <i data-lucide="check-circle"></i> רגיל (Normal)
+                    <h3 class="priority-title normal" onclick="toggleSection('Normal')">
+                        <i data-lucide="chevron-down" class="collapse-icon" id="icon-Normal"></i>
+                        <i data-lucide="check-circle"></i>
+                        <span class="section-name">Normal</span>
+                        <span class="count-badge" id="count-Normal">(0)</span>
                     </h3>
                     <div class="task-list" id="list-Normal"></div>
                 </section>
 
                 <section class="priority-section" id="section-Done">
                     <h3 class="priority-title done">
-                        <i data-lucide="archive"></i> הושלמו (Done)
+                        <div class="done-title-left" onclick="toggleSection('Done')">
+                            <i data-lucide="chevron-down" class="collapse-icon" id="icon-Done"></i>
+                            <i data-lucide="archive"></i>
+                            <span class="section-name">Completed</span>
+                            <span class="count-badge" id="count-Done">(0)</span>
+                        </div>
+                        <button id="clearAllDoneBtn" class="btn btn-danger btn-sm">
+                            <i data-lucide="trash-2"></i> Clear Completed
+                        </button>
                     </h3>
                     <div class="task-list" id="list-Done"></div>
                 </section>
             </div>
         </main>
+
+        <footer class="app-footer">
+            <p>Made by AirZone</p>
+        </footer>
     </div>
 
     <template id="task-template">
@@ -103,15 +130,19 @@
                 <div class="inline-edit-form">
                     <div class="form-row">
                         <select class="edit-priority" style="margin-bottom: 12px;">
-                            <option value="Normal">🟢 רגילה</option>
-                            <option value="High">🟡 גבוהה</option>
-                            <option value="Urgent">🔴 דחופה</option>
+                            <option value="Normal">🟢 Normal</option>
+                            <option value="High">🟡 High</option>
+                            <option value="Urgent">🔴 Urgent</option>
                         </select>
                     </div>
-                    <textarea class="edit-desc" placeholder="פירוט המשימה..."></textarea>
+                    <textarea class="edit-desc" placeholder="Task details..."></textarea>
                     <div class="inline-edit-actions">
-                        <button class="btn cancel-edit-btn">ביטול</button>
-                        <button class="btn btn-primary save-edit-btn">שמור שינויים</button>
+                        <input type="file" class="edit-file-select" style="display: none;" multiple>
+                        <button class="btn btn-secondary edit-attach-btn">
+                            <i data-lucide="paperclip"></i> Attach File
+                        </button>
+                        <button class="btn cancel-edit-btn">Cancel</button>
+                        <button class="btn btn-primary save-edit-btn">Save Changes</button>
                     </div>
                 </div>
             </div>

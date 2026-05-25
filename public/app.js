@@ -10,6 +10,9 @@ const html = document.documentElement;
 const addTaskBtn = document.getElementById('addTaskBtn');
 const taskPriority = document.getElementById('taskPriority');
 const taskDescription = document.getElementById('taskDescription');
+const attachFileBtn = document.getElementById('attachFileBtn');
+const taskFileSelect = document.getElementById('taskFileSelect');
+const clearAllDoneBtn = document.getElementById('clearAllDoneBtn');
 
 const savedTheme = localStorage.getItem('agent-tasks-theme') || 'dark';
 html.setAttribute('data-theme', savedTheme);
@@ -21,7 +24,160 @@ themeToggle.addEventListener('click', () => {
     localStorage.setItem('agent-tasks-theme', newTheme);
 });
 
-// Image Paste Handling (Event Delegation for all textareas)
+// Initialize collapse states from localStorage
+function initCollapseStates() {
+    const sections = ['Urgent', 'High', 'Normal', 'Done'];
+    sections.forEach(name => {
+        const section = document.getElementById(`section-${name}`);
+        if (section) {
+            const isCollapsed = localStorage.getItem(`anduril-collapsed-${name}`) === 'true';
+            if (isCollapsed) {
+                section.classList.add('collapsed');
+            } else {
+                section.classList.remove('collapsed');
+            }
+        }
+    });
+}
+
+// Toggle section collapsable state
+window.toggleSection = function(name) {
+    const section = document.getElementById(`section-${name}`);
+    if (!section) return;
+    const isCollapsed = section.classList.toggle('collapsed');
+    localStorage.setItem(`anduril-collapsed-${name}`, isCollapsed ? 'true' : 'false');
+};
+
+// Clear all completed tasks
+if (clearAllDoneBtn) {
+    clearAllDoneBtn.addEventListener('click', async (e) => {
+        e.stopPropagation(); // Don't trigger collapse
+        const doneTasks = tasks.filter(t => t.status === 'done');
+        if (doneTasks.length === 0) {
+            alert('No completed tasks to clear.');
+            return;
+        }
+        if (!confirm(`Are you sure you want to delete all ${doneTasks.length} completed tasks?`)) return;
+
+        const filenames = [];
+        const imgRegex = /!\[.*?\]\(images\/(.*?)\)/g;
+        const fileRegex = /\[.*?\]\(images\/(.*?)\)/g;
+
+        doneTasks.forEach(task => {
+            if (task.content) {
+                let match;
+                while ((match = imgRegex.exec(task.content)) !== null) {
+                    filenames.push(match[1]);
+                }
+                while ((match = fileRegex.exec(task.content)) !== null) {
+                    filenames.push(match[1]);
+                }
+            }
+        });
+
+        if (filenames.length > 0) {
+            try {
+                await fetch('/api/delete-images', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filenames })
+                });
+            } catch (err) {
+                console.error('Failed to delete media', err);
+            }
+        }
+
+        tasks = tasks.filter(t => t.status !== 'done');
+        renderTasks();
+        await saveTasks();
+    });
+}
+
+// File Upload Utility
+async function uploadFile(file, textarea) {
+    const isImage = file.type.startsWith('image/');
+    const startPos = textarea.selectionStart;
+    const endPos = textarea.selectionEnd;
+    
+    const originalName = file.name || (isImage ? 'image.png' : 'file.bin');
+    const ext = originalName.split('.').pop() || (isImage ? 'webp' : 'bin');
+    
+    const uploadingText = `\n![Uploading ${originalName}...]()\n`;
+    
+    textarea.value = textarea.value.substring(0, startPos) + 
+        uploadingText + 
+        textarea.value.substring(endPos);
+    
+    try {
+        let bodyBlob = file;
+        let finalExt = ext;
+        
+        // Optimize images client-side
+        if (isImage) {
+            try {
+                const bitmap = await createImageBitmap(file);
+                const canvas = document.createElement('canvas');
+                canvas.width = bitmap.width;
+                canvas.height = bitmap.height;
+                canvas.getContext('2d').drawImage(bitmap, 0, 0);
+                bodyBlob = await new Promise(r => canvas.toBlob(r, 'image/webp', 0.85));
+                finalExt = 'webp';
+            } catch (err) {
+                console.warn('Canvas webp conversion failed, using raw image', err);
+            }
+        }
+        
+        const response = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/octet-stream',
+                'X-File-Ext': finalExt,
+                'X-File-Name': encodeURIComponent(originalName)
+            },
+            body: bodyBlob
+        });
+        const data = await response.json();
+        
+        let replacement;
+        if (isImage || finalExt === 'webp') {
+            replacement = `\n![${originalName}](${data.url})\n`;
+        } else {
+            replacement = `\n[📄 ${originalName}](${data.url})\n`;
+        }
+        textarea.value = textarea.value.replace(uploadingText, replacement);
+    } catch (err) {
+        console.error('File upload failed', err);
+        textarea.value = textarea.value.replace(uploadingText, `\n[Error uploading ${originalName}]\n`);
+    }
+}
+
+// Drag & Drop Handling
+document.addEventListener('dragover', (e) => {
+    if (e.target.tagName === 'TEXTAREA') {
+        e.preventDefault();
+        e.target.classList.add('drag-over');
+    }
+});
+document.addEventListener('dragleave', (e) => {
+    if (e.target.tagName === 'TEXTAREA') {
+        e.target.classList.remove('drag-over');
+    }
+});
+document.addEventListener('drop', async (e) => {
+    if (e.target.tagName === 'TEXTAREA') {
+        const textarea = e.target;
+        textarea.classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            e.preventDefault();
+            for (let i = 0; i < files.length; i++) {
+                await uploadFile(files[i], textarea);
+            }
+        }
+    }
+});
+
+// Paste Handling
 document.addEventListener('paste', async (e) => {
     if (e.target.tagName !== 'TEXTAREA') return;
     
@@ -29,63 +185,42 @@ document.addEventListener('paste', async (e) => {
     const cd = e.clipboardData;
     if (!cd) return;
 
-    // Try clipboardData.items first (Chrome/Edge)
-    let imageFile = null;
+    const files = [];
     if (cd.items) {
         for (let i = 0; i < cd.items.length; i++) {
-            if (cd.items[i].type.startsWith('image/')) {
-                imageFile = cd.items[i].getAsFile();
-                break;
-            }
+            const file = cd.items[i].getAsFile();
+            if (file) files.push(file);
         }
     }
-    // Fallback: clipboardData.files (Firefox, Snipping Tool edge cases)
-    if (!imageFile && cd.files && cd.files.length > 0) {
+    if (files.length === 0 && cd.files && cd.files.length > 0) {
         for (let i = 0; i < cd.files.length; i++) {
-            if (cd.files[i].type.startsWith('image/')) {
-                imageFile = cd.files[i];
-                break;
-            }
+            files.push(cd.files[i]);
         }
     }
 
-    if (!imageFile) return;
-    e.preventDefault();
-
-    const startPos = textarea.selectionStart;
-    const endPos = textarea.selectionEnd;
-    const uploadingText = '![מעלה תמונה...]()\n';
-    
-    textarea.value = textarea.value.substring(0, startPos) + 
-        uploadingText + 
-        textarea.value.substring(endPos);
-    
-    try {
-        // Convert to WebP client-side via canvas
-        const bitmap = await createImageBitmap(imageFile);
-        const canvas = document.createElement('canvas');
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        canvas.getContext('2d').drawImage(bitmap, 0, 0);
-        const webpBlob = await new Promise(r => canvas.toBlob(r, 'image/webp', 1.0));
-
-        const response = await fetch('/api/upload', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/octet-stream',
-                'X-File-Ext': 'webp' 
-            },
-            body: webpBlob
-        });
-        const data = await response.json();
-        
-        const mdImage = `![תמונה מצורפת](${data.url})\n`;
-        textarea.value = textarea.value.replace(uploadingText, mdImage);
-    } catch (err) {
-        console.error('Image upload failed', err);
-        textarea.value = textarea.value.replace(uploadingText, '[שגיאה בהעלאת תמונה]\n');
+    if (files.length > 0) {
+        e.preventDefault();
+        for (const file of files) {
+            await uploadFile(file, textarea);
+        }
     }
 });
+
+// Attach File Trigger
+if (attachFileBtn && taskFileSelect) {
+    attachFileBtn.addEventListener('click', () => {
+        taskFileSelect.click();
+    });
+    taskFileSelect.addEventListener('change', async () => {
+        const files = taskFileSelect.files;
+        if (files && files.length > 0) {
+            for (let i = 0; i < files.length; i++) {
+                await uploadFile(files[i], taskDescription);
+            }
+            taskFileSelect.value = ''; // Clear selection
+        }
+    });
+}
 
 async function fetchTasks() {
     if (isSyncing || editingTaskId) return;
@@ -109,6 +244,7 @@ async function saveTasks() {
     try {
         await fetch('/api/tasks', {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(tasks)
         });
         setSyncStatus('synced');
@@ -122,18 +258,18 @@ async function saveTasks() {
 function setSyncStatus(status) {
     syncStatus.className = 'status-indicator ' + status;
     if (status === 'syncing') {
-        syncStatus.innerHTML = '<i data-lucide="refresh-cw" class="spin"></i> שומר...';
+        syncStatus.innerHTML = '<i data-lucide="refresh-cw" class="spin"></i> Saving...';
     } else if (status === 'synced') {
-        syncStatus.innerHTML = '<i data-lucide="check"></i> מעודכן';
+        syncStatus.innerHTML = '<i data-lucide="check"></i> Synced';
     } else if (status === 'error') {
-        syncStatus.innerHTML = '<i data-lucide="alert-triangle"></i> שגיאת חיבור';
+        syncStatus.innerHTML = '<i data-lucide="alert-triangle"></i> Connection Error';
     }
     lucide.createIcons();
 }
 
 addTaskBtn.addEventListener('click', async () => {
     const desc = taskDescription.value.trim();
-    if (!desc) return alert('נא להזין משימה');
+    if (!desc) return alert('Please enter a task description.');
 
     const newTask = {
         id: Math.random().toString(36).substr(2, 9),
@@ -159,22 +295,26 @@ function toggleTaskStatus(id) {
 }
 
 function deleteTask(id) {
-    if(!confirm('האם אתה בטוח שברצונך למחוק משימה זו?')) return;
+    if (!confirm('Are you sure you want to delete this task?')) return;
     
     const task = tasks.find(t => t.id === id);
     if (task && task.content) {
-        // Extract image filenames from markdown: ![...](images/filename.ext)
         const imgRegex = /!\[.*?\]\(images\/(.*?)\)/g;
+        const fileRegex = /\[.*?\]\(images\/(.*?)\)/g;
         const filenames = [];
         let match;
         while ((match = imgRegex.exec(task.content)) !== null) {
             filenames.push(match[1]);
         }
+        while ((match = fileRegex.exec(task.content)) !== null) {
+            filenames.push(match[1]);
+        }
         if (filenames.length > 0) {
             fetch('/api/delete-images', {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filenames })
-            }).catch(err => console.error('Failed to delete images', err));
+            }).catch(err => console.error('Failed to delete media', err));
         }
     }
     
@@ -201,7 +341,7 @@ async function saveEditTask(id, card) {
     const newDesc = card.querySelector('.edit-desc').value.trim();
 
     if (!newDesc) {
-        alert('המשימה לא יכולה להיות ריקה');
+        alert('Task description cannot be empty.');
         return;
     }
 
@@ -223,6 +363,20 @@ function renderTasks() {
 
     Object.values(lists).forEach(l => l.innerHTML = '');
 
+    // Track pending and total per priority for "pending/total" display
+    const pendingCounts = { 'Urgent': 0, 'High': 0, 'Normal': 0 };
+    const totalCounts = { 'Urgent': 0, 'High': 0, 'Normal': 0, 'Done': 0 };
+
+    // Pre-count all tasks for accurate totals
+    tasks.forEach(task => {
+        if (task.status === 'done') {
+            totalCounts['Done']++;
+        } else {
+            totalCounts[task.priority] = (totalCounts[task.priority] || 0) + 1;
+            pendingCounts[task.priority] = (pendingCounts[task.priority] || 0) + 1;
+        }
+    });
+
     const template = document.getElementById('task-template');
 
     tasks.forEach(task => {
@@ -231,7 +385,9 @@ function renderTasks() {
         const viewMode = clone.querySelector('.task-view');
         const editMode = clone.querySelector('.task-edit');
         
-        if (task.status === 'done') card.classList.add('done');
+        if (task.status === 'done') {
+            card.classList.add('done');
+        }
         
         const checkbox = clone.querySelector('.task-checkbox');
         checkbox.checked = task.status === 'done';
@@ -256,22 +412,55 @@ function renderTasks() {
             viewMode.style.display = 'none';
             editMode.style.display = 'block';
 
-            clone.querySelector('.edit-priority').value = task.priority;
-            clone.querySelector('.edit-desc').value = descText;
+            const editPriority = clone.querySelector('.edit-priority');
+            const editDesc = clone.querySelector('.edit-desc');
+            editPriority.value = task.priority;
+            editDesc.value = descText;
+
+            const editFileSelect = clone.querySelector('.edit-file-select');
+            const editAttachBtn = clone.querySelector('.edit-attach-btn');
+            
+            if (editAttachBtn && editFileSelect) {
+                editAttachBtn.addEventListener('click', () => editFileSelect.click());
+                editFileSelect.addEventListener('change', async () => {
+                    const files = editFileSelect.files;
+                    if (files && files.length > 0) {
+                        for (let i = 0; i < files.length; i++) {
+                            await uploadFile(files[i], editDesc);
+                        }
+                        editFileSelect.value = '';
+                    }
+                });
+            }
 
             clone.querySelector('.cancel-edit-btn').addEventListener('click', () => cancelEditTask());
             clone.querySelector('.save-edit-btn').addEventListener('click', () => saveEditTask(task.id, card));
         }
 
-        // Done tasks go to the Done section
         const targetList = task.status === 'done' 
             ? lists['Done'] 
             : (lists[task.priority] || lists['Normal']);
         targetList.appendChild(clone);
     });
 
+    // Update section counts — priority sections show "pending/total", Done shows count
+    ['Urgent', 'High', 'Normal'].forEach(key => {
+        const countEl = document.getElementById(`count-${key}`);
+        if (countEl) {
+            const pending = pendingCounts[key] || 0;
+            const total = totalCounts[key] || 0;
+            countEl.textContent = `(${pending}/${total})`;
+        }
+    });
+    const doneCountEl = document.getElementById('count-Done');
+    if (doneCountEl) {
+        doneCountEl.textContent = `(${totalCounts['Done']})`;
+    }
+
     lucide.createIcons();
 }
 
+// Initial loads
+initCollapseStates();
 fetchTasks();
 setInterval(fetchTasks, 3000);

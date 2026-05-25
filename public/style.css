@@ -1,11 +1,12 @@
 :root {
-    --bg-main: #f8fafc;
+    --bg-main: #f5f6f8;
     --bg-card: #ffffff;
-    --text-main: #0f172a;
-    --text-muted: #64748b;
-    --border: #e2e8f0;
-    --primary: #3b82f6;
-    --primary-hover: #2563eb;
+    --text-main: #111111; /* True black for strong light-mode contrast */
+    --text-muted: #2d333b; /* Dark slate — readable on white, not washed out */
+    --text-body: #1a1a1a; /* Task body text — near-black */
+    --border: #c4cad4; /* Slightly warmer border */
+    --primary: #1e5a9e;
+    --primary-hover: #15457d;
     --danger: #ef4444;
     --success: #10b981;
     --warning: #f59e0b;
@@ -16,7 +17,7 @@
     
     --priority-high-bg: #fffbeb;
     --priority-high-border: #fde68a;
-    --priority-high-text: #b45309;
+    --priority-high-text: #a5600a;
     
     --priority-normal-bg: #f0fdf4;
     --priority-normal-border: #bbf7d0;
@@ -24,24 +25,27 @@
 }
 
 [data-theme="dark"] {
-    --bg-main: #0f172a;
-    --bg-card: #1e293b;
-    --text-main: #f8fafc;
-    --text-muted: #94a3b8;
-    --border: #334155;
-    --primary: #3b82f6;
+    /* DarkReader-inspired: warm charcoal base, cream text, muted accents */
+    --bg-main: #181a1e;
+    --bg-card: #232629;
+    --text-main: #e8e0d4; /* Warm cream/parchment — DarkReader signature */
+    --text-muted: #b0a898; /* Warm muted text */
+    --text-body: #d4cfc4; /* Warm off-white for task body */
+    --border: #363a3f;
+    --primary: #5a9fd4; /* Softer muted blue */
+    --primary-hover: #4889bf;
     
-    --priority-urgent-bg: #450a0a;
-    --priority-urgent-border: #7f1d1d;
-    --priority-urgent-text: #fca5a5;
+    --priority-urgent-bg: #2c1215;
+    --priority-urgent-border: #5c2225;
+    --priority-urgent-text: #f0908c;
     
-    --priority-high-bg: #422006;
-    --priority-high-border: #78350f;
-    --priority-high-text: #fcd34d;
+    --priority-high-bg: #2c1f0e;
+    --priority-high-border: #5c3d16;
+    --priority-high-text: #e8c06a;
     
-    --priority-normal-bg: #052e16;
-    --priority-normal-border: #14532d;
-    --priority-normal-text: #86efac;
+    --priority-normal-bg: #122a1a;
+    --priority-normal-border: #1e4228;
+    --priority-normal-text: #7dd89a;
 }
 
 * {
@@ -150,6 +154,11 @@ input[type="text"], select, textarea {
 textarea {
     min-height: 100px;
     resize: vertical;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+textarea.drag-over {
+    border-color: var(--primary);
+    background-color: color-mix(in srgb, var(--primary) 6%, var(--bg-main));
 }
 input:focus, select:focus, textarea:focus {
     outline: none;
@@ -163,6 +172,12 @@ select { width: 150px; }
     justify-content: space-between;
     align-items: center;
     margin-top: 12px;
+}
+
+.form-actions-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .hint {
@@ -193,9 +208,32 @@ select { width: 150px; }
     background: var(--primary-hover);
 }
 
+.btn-secondary {
+    background: var(--bg-card);
+    color: var(--text-main);
+    border: 1px solid var(--border);
+}
+.btn-secondary:hover {
+    background: var(--bg-main);
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: white;
+}
+.btn-danger:hover {
+    background: color-mix(in srgb, var(--danger) 85%, black);
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    border-radius: 6px;
+}
+
 /* Task Lists */
 .priority-section {
-    margin-bottom: 32px;
+    margin-bottom: 24px;
 }
 
 .priority-title {
@@ -206,11 +244,38 @@ select { width: 150px; }
     font-size: 1.1rem;
     padding-bottom: 8px;
     border-bottom: 2px solid;
+    cursor: pointer;
+    user-select: none;
 }
+
 .priority-title.urgent { color: var(--priority-urgent-text); border-color: var(--priority-urgent-border); }
 .priority-title.high { color: var(--priority-high-text); border-color: var(--priority-high-border); }
 .priority-title.normal { color: var(--priority-normal-text); border-color: var(--priority-normal-border); }
-.priority-title.done { color: var(--text-muted); border-color: var(--border); }
+.priority-title.done { color: var(--text-muted); border-color: var(--border); cursor: default; }
+
+.done-title-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.count-badge {
+    font-size: 0.9rem;
+    font-weight: 500;
+    opacity: 0.8;
+}
+
+.collapse-icon {
+    transition: transform 0.2s;
+}
+
+.priority-section.collapsed .task-list {
+    display: none;
+}
+.priority-section.collapsed .collapse-icon {
+    transform: rotate(-90deg);
+}
 
 /* Task Card */
 .task-card {
@@ -219,18 +284,18 @@ select { width: 150px; }
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 12px;
-    border-right: 4px solid var(--border);
+    border-left: 4px solid var(--border); /* LTR left border */
     transition: transform 0.2s, opacity 0.3s;
 }
-.task-card:hover { transform: translateX(-4px); }
+.task-card:hover { transform: translateX(4px); } /* LTR right nudge */
 
-#list-Urgent .task-card { border-right-color: var(--priority-urgent-text); }
-#list-High .task-card { border-right-color: var(--priority-high-text); }
-#list-Normal .task-card { border-right-color: var(--priority-normal-text); }
+#list-Urgent .task-card { border-left-color: var(--priority-urgent-text); }
+#list-High .task-card { border-left-color: var(--priority-high-text); }
+#list-Normal .task-card { border-left-color: var(--priority-normal-text); }
 
 .task-card.done {
     opacity: 0.6;
-    border-right-color: var(--border) !important;
+    border-left-color: var(--border) !important;
 }
 .task-card.done .task-title {
     text-decoration: line-through;
@@ -245,6 +310,7 @@ select { width: 150px; }
 .task-actions {
     display: flex;
     gap: 4px;
+    margin-left: auto; /* Push actions to the far right in LTR */
 }
 
 .edit-btn, .delete-btn {
@@ -271,8 +337,9 @@ select { width: 150px; }
 
 .task-body {
     flex: 1;
-    color: var(--text-muted);
+    color: var(--text-body, var(--text-main));
     font-size: 0.95rem;
+    margin-top: 8px;
 }
 
 /* Inline Edit Form */
@@ -284,15 +351,15 @@ select { width: 150px; }
 .inline-edit-actions {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
     gap: 8px;
     margin-top: 4px;
 }
 
-
 /* Checkbox */
 .checkbox-container {
     position: relative;
-    padding-right: 28px;
+    padding-left: 28px; /* LTR padding-left */
     cursor: pointer;
     user-select: none;
     min-height: 24px;
@@ -307,7 +374,7 @@ select { width: 150px; }
 .checkmark {
     position: absolute;
     top: 0;
-    right: 0;
+    left: 0; /* LTR left: 0 */
     height: 24px;
     width: 24px;
     background-color: var(--bg-main);
@@ -340,11 +407,31 @@ select { width: 150px; }
     transform: rotate(45deg);
 }
 
-/* Markdown Image Constraints */
+/* Markdown Content Styling */
 .markdown-body img {
     max-width: 100%;
     max-height: 400px;
     border-radius: 6px;
     border: 1px solid var(--border);
     margin-top: 8px;
+    display: block;
+}
+
+.markdown-body a {
+    color: var(--primary);
+    text-decoration: underline;
+}
+.markdown-body a:hover {
+    color: var(--primary-hover);
+}
+
+/* Footer style */
+.app-footer {
+    text-align: center;
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 500;
 }
